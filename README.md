@@ -6,8 +6,6 @@ This capstone project explores music genre classification using machine learning
 - `Music_Genre_Classification.Rmd`: R Markdown source code with full analysis and visuals
 - `Music_Genre_Classification.pdf`: Rendered report
 - `Capstone.R`: Script version (optional)
-- `models_and_data.RData`: Saved models and datasets
-- `figures/`: All plots and visualizations
 - `fma_metadata/`: Source metadata from the FMA dataset
 
 ## Models Used
