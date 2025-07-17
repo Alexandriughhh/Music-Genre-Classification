@@ -1,0 +1,442 @@
+---
+title: "Genre Classification"
+author: "Alexandria Simms"
+date: "2025-07-14"
+output:
+  pdf_document:
+    df_print: kable
+    number_sections: true
+    toc: true
+    fig_caption: true
+    includes:
+      in_header: preamble.tex
+  html_document:
+    toc: true
+    number_sections: true
+fontsize: 12pt
+bibliography: references.bib
+urlcolor: blue
+---
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(data.table)
+library(janitor)
+library(readr)
+library(caret)
+library(nnet)
+library(randomForest)
+library(pROC)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(corrplot)
+```
+
+```{r load-data}
+features <- fread("fma_metadata/features.csv", data.table = FALSE) %>%
+  janitor::clean_names()
+
+tracks_raw <- read_csv("fma_metadata/tracks.csv", col_names = FALSE)
+header1 <- tracks_raw[1, ] %>% unlist(use.names = FALSE)
+header2 <- tracks_raw[2, ] %>% unlist(use.names = FALSE)
+column_names <- make.names(paste0(header1, ".", header2), unique = TRUE)
+tracks <- tracks_raw[-c(1, 2), ]
+colnames(tracks) <- column_names
+tracks$track_id <- as.integer(rownames(tracks))
+
+```
+
+```{r clean-filter}
+tracks_clean <- tracks %>%
+  select(track_id, genre_top = `track.genre_top`, subset = `set.subset`) %>%
+  filter(!is.na(genre_top), subset == "small") %>%
+  mutate(genre_top = as.factor(genre_top))
+
+```
+
+```{r merge-features}
+colnames(features)[1] <- "track_id"
+features <- features[-1, ]
+features$track_id <- as.integer(features$track_id)
+combined_data <- inner_join(tracks_clean, features, by = "track_id")
+
+```
+
+```{r merge-features}
+colnames(features)[1] <- "track_id"
+features <- features[-1, ]
+features$track_id <- as.integer(features$track_id)
+combined_data <- inner_join(tracks_clean, features, by = "track_id")
+```
+
+```{r. Normalize Features}
+
+features <- features[-1, ]
+features$track_id <- as.integer(features$track_id)
+combined_data <- inner_join(tracks_clean, features, by = "track_id")}
+numeric_features <- combined_data %>%
+  select(-track_id, -subset, -genre_top) %>%
+  select(where(is.numeric))
+feature_matrix <- scale(numeric_features)
+model_data <- data.frame(genre_top = combined_data$genre_top, feature_matrix)
+
+```
+
+\newpage
+
+# **Exploratory Analysis Alexandria Simms**
+
+```{r - Genre distribution}
+genre_counts <- tracks_clean %>%
+  count(genre_top, sort = TRUE)
+```
+
+```{r - Bar plot of genre distribution}
+ggplot(genre_counts, aes(x = reorder(genre_top, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Track Count by Genre",
+       x = "Genre", y = "Number of Tracks") +
+  theme_minimal()
+
+```
+
+```{r Distribution of Audio Feature Averages}
+
+# Double-check subset distribution
+table(tracks_clean$subset)
+
+# Identify MFCC, chroma, and spectral columns
+mfcc_cols <- grep("^mfcc", names(combined_data), value = TRUE)
+chroma_cols <- grep("^chroma", names(combined_data), value = TRUE)
+spectral_cols <- grep("^spectral", names(combined_data), value = TRUE)
+
+# Convert relevant columns to numeric safely
+combined_data <- combined_data %>%
+  mutate(across(all_of(c(mfcc_cols, chroma_cols, spectral_cols)), ~as.numeric(.)))
+
+# Calculate per-track means
+audio_means <- combined_data %>%
+  mutate(
+    mfcc_mean = rowMeans(select(., all_of(mfcc_cols)), na.rm = TRUE),
+    chroma_mean = rowMeans(select(., all_of(chroma_cols)), na.rm = TRUE),
+    spectral_mean = rowMeans(select(., all_of(spectral_cols)), na.rm = TRUE)
+  ) %>%
+  select(genre_top, mfcc_mean, chroma_mean, spectral_mean)
+
+# Make sure mfcc_cols is defined
+mfcc_cols <- grep("^mfcc", colnames(combined_data), value = TRUE)
+
+# Convert MFCC columns to numeric if needed
+combined_data <- combined_data %>%
+  mutate(across(all_of(mfcc_cols), ~as.numeric(.)))
+
+# Create mean column
+combined_data <- combined_data %>%
+  mutate(mfcc_mean = rowMeans(select(., all_of(mfcc_cols)), na.rm = TRUE))
+
+# Get column names that contain chroma
+chroma_cols <- grep("^chroma", colnames(combined_data), value = TRUE)
+
+# Convert to numeric and calculate the mean
+combined_data <- combined_data %>%
+  mutate(across(all_of(chroma_cols), ~as.numeric(.))) %>%
+  mutate(chroma_mean = rowMeans(select(., all_of(chroma_cols)), na.rm = TRUE))
+
+# Get column names that contain spectral
+spectral_cols <- grep("^spectral", colnames(combined_data), value = TRUE)
+
+# Convert to numeric and calculate the mean
+combined_data <- combined_data %>%
+  mutate(across(all_of(spectral_cols), ~as.numeric(.))) %>%
+
+```
+
+```{r - Boxplot of MFCC feature by genre}
+ggplot(combined_data, aes(x = genre_top, y = mfcc_mean)) +
+  geom_boxplot(outlier.size = 0.5, fill = "lightblue") +
+  coord_flip() +
+  labs(title = "Distribution of MFCC Mean by Genre",
+       x = "Genre", y = "Mean MFCC") +
+  theme_minimal()
+```
+
+```{r - Boxplot of Chroma feature by genre}
+ggplot(combined_data, aes(x = genre_top, y = chroma_mean)) +
+  geom_boxplot(outlier.size = 0.5, fill = "lightgreen") +
+  coord_flip() +
+  labs(title = "Distribution of Chroma Mean by Genre",
+       x = "Genre", y = "Mean Chroma") +
+  theme_minimal()
+
+```
+
+```{r - Boxplot of Spectral feature by genre}
+ggplot(combined_data, aes(x = genre_top, y = spectral_mean)) +
+  geom_boxplot(outlier.size = 0.5, fill = "lightgreen") +
+  coord_flip() +
+  labs(title = "Distribution of Spectral Mean by Genre",
+       x = "Genre", y = "spectral_mean") +
+  theme_minimal()
+```
+
+```{r - Correlation Heatmap}
+library(corrplot)
+
+# Compute correlation matrix on a subset to avoid overload
+corr_matrix <- cor(model_data[ , 2:30])  # First 30 features
+corrplot(corr_matrix, method = "color", type = "upper", tl.cex = 0.6)
+
+```
+
+```{r - PCA Genre Clusters}
+
+#PCA for Visualization
+library(FactoMineR)
+library(factoextra)
+
+# Run PCA on scaled features
+pca_res <- prcomp(model_data[ , -1], center = TRUE, scale. = TRUE)
+
+# Plot first 2 PCs, colored by genre
+fviz_pca_ind(pca_res, 
+             geom.ind = "point",
+             habillage = model_data$genre_top,
+             addEllipses = TRUE,
+             palette = "Dark2",
+             title = "PCA: Genre Clusters")
+
+```
+
+```{r - PCA of Audio Features by Genre}
+# Create pca_df
+pca_result <- prcomp(model_data[, -1], center = TRUE, scale. = TRUE)
+# Extract the first two principal components
+pca_scores <- as.data.frame(pca_result$x[, 1:2])
+
+# Add genre labels back in from model_data
+pca_df <- cbind(pca_scores, genre_top = model_data$genre_top)
+
+
+# PCA of Audio Features by Genre
+ggplot(pca_df, aes(x = PC1, y = PC2, color = genre_top)) +
+  geom_point(alpha = 0.6) +
+  stat_ellipse(type = "norm", level = 0.68, linetype = "dashed") +
+  labs(title = "PCA of Audio Features by Genre",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+```
+
+```{r - Scree Plot}
+ Scree Plot
+pca_variance <- pca_result$sdev^2
+pca_prop_var <- pca_variance / sum(pca_variance)
+qplot(y = pca_prop_var[1:10], x = 1:10, geom = "line") +
+  labs(title = "Scree Plot", x = "Principal Component", y = "Proportion of Variance Explained")
+```
+
+```{r - Genre Distribution Across Data Splits}
+
+# Genre Frequency in Train vs Test vs Holdout sets
+
+library(ggplot2)
+library(dplyr)
+
+# Add labels for dataset splits
+genre_distribution <- bind_rows(
+  train_set %>% mutate(Split = "Train"),
+  test_set %>% mutate(Split = "Test"),
+  holdout_set %>% mutate(Split = "Holdout")
+)
+
+# Plot distribution
+ggplot(genre_distribution, aes(x = genre_top, fill = Split)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Genre Distribution Across Data Splits",
+       x = "Genre", y = "Count") +
+  coord_flip() +
+  theme_minimal(base_size = 14)
+
+```
+
+```{r - TOP N important features}
+# Calculate average importance across genres for each feature
+rf_importance_overall <- rf_importance$importance %>%
+  rowMeans() %>%
+  sort(decreasing = TRUE)
+
+# Convert to data frame
+rf_top_features <- data.frame(
+  Feature = names(rf_importance_overall),
+  Importance = rf_importance_overall
+)
+
+# View top N
+head(rf_top_features, 10)
+
+library(caret)
+# Get variable importance from rf_tuned
+rf_importance <- varImp(rf_tuned, scale = TRUE)
+
+# Convert to a tidy data frame
+importance_df <- rf_importance$importance %>%
+  rownames_to_column(var = "Feature") %>%
+  arrange(desc(Overall))
+# Choose top N
+top_n <- 20
+
+# Slice top N features
+top_features <- importance_df %>%
+  slice_max(order_by = Overall, n = top_n)
+
+# Plot
+library(ggplot2)
+
+rf_top_features %>%
+  slice_max(order_by = Importance, n = 20) %>%
+  ggplot(aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 20 Most Informative Features (Random Forest)",
+       x = "Feature", y = "Average Importance") +
+  theme_minimal(base_size = 14)
+
+```
+
+\newpage
+
+# **Methods: Alexandria Simms **
+
+
+```{r split-data}
+
+set.seed(123)
+train_index <- createDataPartition(model_data$genre_top, p = 0.8, list = FALSE)
+train_set <- model_data[train_index, ]
+test_set <- model_data[-train_index, ]
+
+```
+
+# K Nearest Neighbors Model
+
+```{r knn-model}
+knn_model <- train(
+  genre_top ~ ., data = train_set,
+  method = "knn",
+  tuneLength = 5,
+  trControl = trainControl(method = "cv", number = 5)
+)
+knn_preds <- predict(knn_model, newdata = test_set)
+confusionMatrix(knn_preds, test_set$genre_top)
+
+```
+
+# Random Forest Model
+
+```{r rf-model}
+rf_model <- randomForest(
+  genre_top ~ ., data = train_set,
+  ntree = 100, importance = TRUE
+)
+rf_preds <- predict(rf_model, newdata = test_set)
+confusionMatrix(rf_preds, test_set$genre_top)
+varImpPlot(rf_model)
+```
+
+# Model Tuning
+
+```{r holdout-tuning}
+set.seed(123)
+holdout_index <- createDataPartition(model_data$genre_top, p = 0.8, list = FALSE)
+training_set <- model_data[holdout_index, ]
+holdout_set  <- model_data[-holdout_index, ]
+
+training_set$genre_top <- as.factor(training_set$genre_top)
+holdout_set$genre_top  <- as.factor(holdout_set$genre_top)
+
+# KNN Tuning
+tuned_knn <- train(
+  genre_top ~ ., data = training_set,
+  method = "knn", tuneLength = 10,
+  trControl = trainControl(method = "cv", number = 5)
+)
+plot(tuned_knn)
+knn_final_preds <- predict(tuned_knn, newdata = holdout_set)
+confusionMatrix(knn_final_preds, holdout_set$genre_top)
+
+# RF Tuning
+rf_grid <- expand.grid(mtry = c(10, 20, 30, 40, 50))
+rf_tuned <- train(
+  genre_top ~ ., data = training_set,
+  method = "rf",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid = rf_grid,
+  importance = TRUE
+)
+plot(rf_tuned)
+rf_final_preds <- predict(rf_tuned, newdata = holdout_set)
+cm_rf <- confusionMatrix(rf_final_preds, holdout_set$genre_top)
+print(cm_rf)
+
+```
+
+\newpage
+
+# Results
+
+```{r  ROC Curve for Random Forest}
+rf_probabilities <- predict(rf_tuned, newdata = holdout_set, type = "prob")
+roc_list <- list()
+true_labels <- holdout_set$genre_top
+classes <- colnames(rf_probabilities)
+
+for (class in classes) {
+  binary_labels <- ifelse(true_labels == class, 1, 0)
+  prob <- rf_probabilities[[class]]
+  roc_obj <- roc(binary_labels, prob, levels = c(0, 1), direction = "<")
+  roc_list[[class]] <- roc_obj
+}
+
+ggroc(roc_list) +
+  labs(title = "ROC Curves for Each Genre (Random Forest)",
+       x = "False Positive Rate", y = "True Positive Rate") +
+  theme_minimal()
+sapply(roc_list, auc)
+
+
+```
+
+```{r genre-wise-accuracy}
+
+cm_knn <- confusionMatrix(knn_final_preds, holdout_set$genre_top)
+knn_accuracy <- as.data.frame(cm_knn$byClass) %>%
+  mutate(Genre = rownames(.), Model = "KNN") %>%
+  select(Genre, Sensitivity, Model)
+
+rf_accuracy <- as.data.frame(cm_rf$byClass) %>%
+  mutate(Genre = rownames(.), Model = "Random Forest") %>%
+  select(Genre, Sensitivity, Model)
+
+combined_accuracy <- bind_rows(knn_accuracy, rf_accuracy)
+
+ggplot(combined_accuracy, aes(x = reorder(Genre, Sensitivity), y = Sensitivity, fill = Model)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  coord_flip() +
+  labs(title = "Genre-wise Accuracy Comparison: KNN vs Random Forest",
+       x = "Genre", y = "Accuracy (Recall)") +
+  theme_minimal(base_size = 14) +
+  scale_fill_brewer(palette = "Dark2")
+
+```
+
+```{r save-objects}
+save(train_set, test_set, rf_model, knn_model, file = "models_and_data.RData")
+```
+
+
