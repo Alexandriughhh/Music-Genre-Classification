@@ -438,5 +438,6 @@ ggplot(combined_accuracy, aes(x = reorder(Genre, Sensitivity), y = Sensitivity, 
 ```{r save-objects}
 save(train_set, test_set, rf_model, knn_model, file = "models_and_data.RData")
 ```
+ChatGPT was used to assist in analysis and editing \cite{openai2023chatgpt}.
 
 
