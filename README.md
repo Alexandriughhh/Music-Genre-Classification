@@ -20,6 +20,7 @@ This capstone project explores music genre classification using machine learning
 ## References
 - Defferrard et al. (2017). [FMA: A Dataset for Music Analysis](https://arxiv.org/abs/1612.01840)
 - James et al. (2013). *An Introduction to Statistical Learning with Applications in R*
+- OpenAI. (2023). ChatGPT [Large language model]. https://openai.com/chatgpt
 
 ## Developed With
 - R, RStudio
